@@ -35,7 +35,7 @@ class Backup:
   total=len(pending)
   done=0
   counts={'versions_added':0,'blocks_added':0,'archives_processed':0,'archives_total':total,
-          'archives_skipped':len(lists)+len(indexes)-total}
+          'archives_skipped':len(lists)+len(indexes)-total,'duplicate_paths':0}
   started=time.monotonic()
   def report(kind,name,phase):
    if progress:
@@ -61,13 +61,15 @@ class Backup:
       else:
        version=self.db.execute('INSERT INTO versions(volume) VALUES(?)',(p.name,)).lastrowid
        counts['versions_added']+=1
-      batch=[]
+      by_path={}
       for f in files:
        path=f.get('path',f.get('Path'))
-       if path:batch.append((version,path,f.get('type',f.get('Type','File')),
+       if path:
+        if path in by_path: counts['duplicate_paths']+=1
+        by_path[path]=(version,path,f.get('type',f.get('Type','File')),
         f.get('size',f.get('Size',0)),f.get('hash',f.get('Hash')),
-        json.dumps(f.get('blocklists',f.get('Blocklists',[])))))
-      self.db.executemany('INSERT INTO files VALUES(?,?,?,?,?,?)',batch)
+        json.dumps(f.get('blocklists',f.get('Blocklists',[]))))
+      self.db.executemany('INSERT INTO files VALUES(?,?,?,?,?,?)',by_path.values())
       self.db.execute('INSERT OR REPLACE INTO indexed_volumes VALUES(?,?,?)',(p.name,stat.st_size,stat.st_mtime_ns))
     else:
      mappings=[]

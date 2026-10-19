@@ -60,3 +60,12 @@ The ETA is approximate and may vary considerably between archives. Existing
 indexes from earlier versions can be reused, and new `.dindex.zip` mappings
 are appended. If a Duplicati backup has no `.dindex.zip` files, the indexer
 cannot locate its data blocks; only file listings will be available.
+
+### Duplicate paths in historical file lists
+
+Some Duplicati snapshots contain repeated exact path entries. The indexer
+records one row per snapshot/path and keeps the **last** occurrence when
+duplicates are encountered, reporting their count as `duplicate_paths`
+in the final JSON statistics. This avoids aborting an otherwise useful
+archive index. It does not imply the duplicated records are equivalent;
+inspect and verify any restored files that may be affected.
