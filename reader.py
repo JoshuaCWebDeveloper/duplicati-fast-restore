@@ -16,7 +16,7 @@ class Backup:
   self.db.row_factory=sqlite3.Row
   self.db.executescript('CREATE TABLE IF NOT EXISTS versions(id INTEGER PRIMARY KEY,volume TEXT UNIQUE);CREATE TABLE IF NOT EXISTS files(version INTEGER,path TEXT,type TEXT,size INTEGER,hash TEXT,blocklists TEXT,PRIMARY KEY(version,path));CREATE TABLE IF NOT EXISTS blocks(hash TEXT PRIMARY KEY,volume TEXT,member TEXT);')
  def volumes(self,kind): return sorted(p for p in self.folder.glob('duplicati-*') if ('.'+kind+'.zip') in p.name)
- def index(self):
+ def index(self, lists_only=False):
   count=0
   for p in self.volumes('dlist'):
    if self.db.execute('SELECT 1 FROM versions WHERE volume=?',(p.name,)).fetchone():continue
@@ -28,10 +28,11 @@ class Backup:
    with self.db:
     version=self.db.execute('INSERT INTO versions(volume) VALUES(?)',(p.name,)).lastrowid
     for f in files:
-     if f.get('Path'):self.db.execute('INSERT INTO files VALUES(?,?,?,?,?,?)',(version,f['Path'],f.get('Type','File'),f.get('Size',0),f.get('Hash'),json.dumps(f.get('Blocklists',[]))))
+     path=f.get('path',f.get('Path'))
+     if path:self.db.execute('INSERT INTO files VALUES(?,?,?,?,?,?)',(version,path,f.get('type',f.get('Type','File')),f.get('size',f.get('Size',0)),f.get('hash',f.get('Hash')),json.dumps(f.get('blocklists',f.get('Blocklists',[])))))
    count+=1
   blocks=0
-  for p in self.volumes('dblock'):
+  for p in ([] if lists_only else self.volumes('dblock')):
    with zipfile.ZipFile(p) as z:
     with self.db:
      for member in z.namelist():
@@ -39,14 +40,16 @@ class Backup:
       name=member.rsplit('/',1)[-1]
       blocks+=self.db.execute('INSERT OR IGNORE INTO blocks VALUES(?,?,?)',(name,p.name,member)).rowcount
   return {'versions_added':count,'blocks_added':blocks}
+ def close(self):self.db.close()
  def snapshots(self):return [dict(r) for r in self.db.execute('SELECT * FROM versions ORDER BY id DESC')]
  def list(self,version,search=''):
   return [dict(r) for r in self.db.execute('SELECT path,type,size,hash FROM files WHERE version=? AND instr(path,?)>0 ORDER BY path LIMIT 2000',(version,search))]
  def block(self,name):
-  r=self.db.execute('SELECT volume,member FROM blocks WHERE hash=?',(name,)).fetchone()
+  r=self.db.execute('SELECT volume,member FROM blocks WHERE hash=?',(name.replace('+','-').replace('/','_'),)).fetchone()
+  if not r:r=self.db.execute('SELECT volume,member FROM blocks WHERE hash=?',(name,)).fetchone()
   if not r:raise FileNotFoundError('Missing block '+name)
   with zipfile.ZipFile(self.folder/r['volume']) as z:data=z.read(r['member'])
-  if sha(data).rstrip('=')!=name.rstrip('='):raise ValueError('Block checksum mismatch')
+  if sha(data).rstrip('=')!=name.replace('-','+').replace('_','/').rstrip('='):raise ValueError('Block checksum mismatch')
   return data
  def restore_file(self,version,path,dest,overwrite=False):
   r=self.db.execute('SELECT * FROM files WHERE version=? AND path=?',(version,path)).fetchone()

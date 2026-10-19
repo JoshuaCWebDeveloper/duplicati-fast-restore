@@ -2,6 +2,7 @@ import argparse,json
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from urllib.parse import urlparse,parse_qs
 from reader import Backup
+from duplicati_db import DuplicatiDB
 
 PAGE='''<!doctype html><meta charset=utf-8><title>Duplicati Fast Restore</title><style>body{font:15px system-ui;max-width:1000px;margin:35px auto;padding:12px}input,button,select{padding:8px;margin:6px}td{border-bottom:1px solid #ddd;padding:7px}</style><h1>Duplicati Fast Restore</h1><select id=v></select><input id=q placeholder="Search paths"><button onclick=load()>Search</button><table id=t></table><p>Destination: <input id=d size=55 placeholder="/tmp/recovered"><button onclick=restore()>Restore selected</button></p><pre id=status></pre><script>
 async function api(url,opts){let r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error);return j}
@@ -33,8 +34,10 @@ def web(db,port):
  print('http://127.0.0.1:'+str(port))
  HTTPServer(('127.0.0.1',port),Handler).serve_forever()
 def main():
- p=argparse.ArgumentParser();p.add_argument('backup');p.add_argument('command',choices=['index','snapshots','list','restore','web']);p.add_argument('items',nargs='*');p.add_argument('--search',default='');p.add_argument('--catalog');p.add_argument('--port',type=int,default=8765);p.add_argument('--overwrite',action='store_true');a=p.parse_args()
- b=Backup(a.backup,a.catalog)
+ p=argparse.ArgumentParser();p.add_argument('backup');p.add_argument('command',choices=['index','snapshots','list','restore','web']);p.add_argument('items',nargs='*');p.add_argument('--search',default='');p.add_argument('--catalog');p.add_argument('--db',help='Duplicati per-backup SQLite database');p.add_argument('--port',type=int,default=8765);p.add_argument('--overwrite',action='store_true');a=p.parse_args()
+ b=DuplicatiDB(a.backup,a.db) if a.db else Backup(a.backup,a.catalog)
+ if not a.db and a.command != 'index' and not b.snapshots():
+  raise SystemExit('No indexed snapshots. Specify --db PATH_TO_DUPLICATI_JOB_SQLITE (recommended), or run the index command explicitly.')
  try:
   if a.command=='index':result=b.index()
   elif a.command=='snapshots':result=b.snapshots()
@@ -42,5 +45,5 @@ def main():
   elif a.command=='restore':result=b.restore(int(a.items[0]),a.items[2:],a.items[1],a.overwrite)
   else:return web(b,a.port)
   print(json.dumps(result,indent=2))
- finally:b.db.close()
+ finally:b.close() if hasattr(b,'close') else b.db.close()
 if __name__=='__main__':main()

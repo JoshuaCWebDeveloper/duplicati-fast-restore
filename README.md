@@ -24,3 +24,23 @@ The tool indexes snapshot metadata and volume hashes into an SQLite file (.fast-
 **Important:** This is a prototype. Supports local unencrypted ZIP backups only. Does not support AES/GPG volumes, other compression formats, cloud backends, metadata, permissions, links, or all historical Duplicati formats. Multiblock blocklist support is preliminary. There are no real Duplicati compatibility fixtures or measured speed comparisons yet. Use copies of backups and verify restored files before relying on this for recovery. The built-in web UI is localhost-only; do not expose it to untrusted users.
 
 Backup format documentation: https://docs.duplicati.com/technical-details/understanding-restore
+
+## Fast path: use Duplicati's existing SQLite database
+
+Pass `--db` pointing to the **per-backup local database**, which is normally
+stored outside the backup-volume directory. For example:
+
+```sh
+python app.py /mnt/d/Backup/Media-Drive snapshots --db /path/to/job.sqlite
+python app.py /mnt/d/Backup/Media-Drive web --db /path/to/job.sqlite
+```
+
+In this mode snapshot listing, browsing, and block location lookup query the
+original database **read-only**, without rebuilding an index. The database must
+match the backup volumes. Never point `--db` to `Duplicati-server.sqlite` or
+`.fast-restore.sqlite`. Direct restores currently support ZIP dblock volumes
+and ordinary files (not symlinks/metadata); test recovered data independently.
+
+Without `--db`, the reader requires a previously built local catalog and
+returns an explicit error if none exists. Run `index` explicitly to build it,
+which scans dblock ZIP entries and can be slow on large backups.
