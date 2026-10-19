@@ -15,20 +15,35 @@ def browse(db, version, directory="", search="", limit=500):
     if search:
         rows=db.db.execute('SELECT path,type,size FROM files WHERE version=? AND instr(lower(path),lower(?))>0 ORDER BY path LIMIT ?',(version,search,limit+1)).fetchall()
         return {"directory":directory,"search":search,"entries":[{"path":r["path"],"name":r["path"].replace("\\","/").rstrip("/").split("/")[-1],"type":r["type"],"size":r["size"]} for r in rows[:limit]],"truncated":len(rows)>limit}
-    rows=db.db.execute('SELECT path,type,size FROM files WHERE version=? ORDER BY path',(version,)).fetchall()
-    entries={}
-    for r in rows:
-        path=r["path"].replace("\\","/")
-        normalized=path.lstrip("/")
-        if directory and not normalized.startswith(directory):continue
-        remainder=normalized[len(directory):] if directory else normalized
-        if not remainder:continue
-        first=remainder.split("/",1)[0]
-        # At root, leading '/' is a virtual root; on Windows, C: remains visible.
-        has_child="/" in remainder.rstrip("/")
-        is_folder=has_child or r["type"].lower() in ("folder","directory")
-        child_path=("/" if (absolute or (not directory and path.startswith("/"))) else "")+directory+first+("/" if is_folder else "")
-        if first not in entries or not has_child:
-            entries[first]={"name":first,"path":child_path if has_child else path,"type":"Folder" if is_folder else r["type"],"size":None if is_folder else r["size"]}
-    ordered=sorted(entries.values(),key=lambda e:(e["type"].lower() not in ("folder","directory"),e["name"].lower()))
-    return {"directory":directory,"search":"","entries":ordered[:limit],"truncated":len(ordered)>limit}
+    # Group child names inside SQLite. Never transfer all snapshot rows to Python.
+    # Normalise leading slashes; only the selected directory is considered.
+    base = "ltrim(replace(path, char(92), '/'), '/')"
+    suffix = f'substr({base}, ? + 1)'
+    sql = f"""
+    WITH candidates AS (
+      SELECT path,type,size,{suffix} AS rest
+      FROM files WHERE version=? AND substr({base},1,?)=?
+    ), names AS (
+      SELECT path,type,size,rest,
+        CASE WHEN instr(rest,'/')>0
+          THEN substr(rest,1,instr(rest,'/')-1) ELSE rest END AS child
+      FROM candidates WHERE rest!=''
+    ), grouped AS (
+      SELECT child,
+        MAX(CASE WHEN instr(rest,'/')>0 OR lower(type) IN ('folder','directory')
+                 THEN 1 ELSE 0 END) AS folder,
+        MAX(CASE WHEN instr(rest,'/')=0 THEN size ELSE NULL END) AS size
+      FROM names WHERE child!='' GROUP BY child
+    )
+    SELECT child,folder,size FROM grouped ORDER BY folder DESC,child COLLATE NOCASE LIMIT ?
+    """
+    # Detect whether there are more than the display limit.
+    rows=db.db.execute(sql,(len(directory),version,len(directory),directory,limit+1)).fetchall()
+    entries=[]
+    prefix=('/' if absolute else '')+directory
+    for r in rows[:limit]:
+        is_folder=bool(r['folder'])
+        entries.append({'name':r['child'],'path':prefix+r['child']+('/' if is_folder else ''),
+                        'type':'Folder' if is_folder else 'File',
+                        'size':None if is_folder else r['size']})
+    return {'directory':directory,'search':'','entries':entries,'truncated':len(rows)>limit}
