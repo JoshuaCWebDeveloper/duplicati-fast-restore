@@ -44,7 +44,9 @@ def main():
   if a.command=='index':
    def progress(x):
     eta='estimating' if x['eta_seconds'] is None else str(x['eta_seconds'])+'s'
-    print(f"[{x['archives_processed']}/{x['archives_total']}] {x['phase']} {x['kind']} {x['volume']} | elapsed {x['elapsed_seconds']}s | ETA {eta}",file=sys.stderr,flush=True)
+    records=(f" | records {x['records_processed']}/{x['records_total']}" if 'records_total' in x else '')
+    pending=(', awaiting '+', '.join(x['eta_pending'])+' timing' if x.get('eta_pending') else '')
+    print(f"[{x['archives_processed']}/{x['archives_total']}] {x['phase']} {x['kind']} {x['volume']}{records} | elapsed {x['elapsed_seconds']}s | ETA {eta}{pending}",file=sys.stderr,flush=True)
    result=b.index(progress=progress)
   elif a.command=='snapshots':result=b.snapshots()
   elif a.command=='list':result=b.list(int(a.items[0]),a.search)

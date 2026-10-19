@@ -69,3 +69,19 @@ duplicates are encountered, reporting their count as `duplicate_paths`
 in the final JSON statistics. This avoids aborting an otherwise useful
 archive index. It does not imply the duplicated records are equivalent;
 inspect and verify any restored files that may be affected.
+
+### Slow indexing on Windows or external backup disks
+
+If backup archives live on a slow drive, keep the catalog on your faster local
+SSD (this is especially important for SQLite workloads):
+
+```powershell
+python .\app.py D:\Backup\Media-Drive\ index --catalog C:\Users\carte\fast-restore.sqlite
+python .\app.py D:\Backup\Media-Drive\ snapshots --catalog C:\Users\carte\fast-restore.sqlite
+```
+
+Using `--catalog` must be consistent across index, browse, and restore commands.
+The initial ETA waits until at least one `.dlist` and `.dindex` is completed,
+so it does not extrapolate a large snapshot's time across thousands of tiny
+index files. Large snapshot inserts report their own record counts every
+10,000 records.

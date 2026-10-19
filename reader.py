@@ -14,6 +14,8 @@ class Backup:
   self.folder=Path(folder).resolve()
   self.db=sqlite3.connect(str(catalog or self.folder/'.fast-restore.sqlite'))
   self.db.row_factory=sqlite3.Row
+  self.db.execute('PRAGMA temp_store=MEMORY')
+  self.db.execute('PRAGMA cache_size=-65536')
   self.db.executescript('CREATE TABLE IF NOT EXISTS versions(id INTEGER PRIMARY KEY,volume TEXT UNIQUE);CREATE TABLE IF NOT EXISTS files(version INTEGER,path TEXT,type TEXT,size INTEGER,hash TEXT,blocklists TEXT,PRIMARY KEY(version,path));CREATE TABLE IF NOT EXISTS blocks(hash TEXT PRIMARY KEY,volume TEXT,member TEXT);')
  def volumes(self,kind): return sorted(p for p in self.folder.glob('duplicati-*') if ('.'+kind+'.zip') in p.name)
  def index(self, lists_only=False, progress=None):
@@ -34,17 +36,31 @@ class Backup:
     pending.append((kind,p,stat))
   total=len(pending)
   done=0
+  done_by_kind={'dlist':0,'dindex':0}
+  started_by_kind={}
   counts={'versions_added':0,'blocks_added':0,'archives_processed':0,'archives_total':total,
           'archives_skipped':len(lists)+len(indexes)-total,'duplicate_paths':0}
   started=time.monotonic()
   def report(kind,name,phase):
    if progress:
     elapsed=time.monotonic()-started
-    rate=done/elapsed if elapsed>0 else 0
+    # The large dlist snapshots are far slower than small dindex volumes.
+    # Never extrapolate dlist throughput across the much larger dindex count.
+    rates={}
+    for k in ('dlist','dindex'):
+     n=done_by_kind[k]
+     if n and k in started_by_kind:
+      spent=max(time.monotonic()-started_by_kind[k],0.001)
+      rates[k]=n/spent
+    remaining={k:sum(1 for item in pending[done:] if item[0]==k) for k in ('dlist','dindex')}
+    eta=sum(remaining[k]/rates[k] for k in rates)
+    unknown=[k for k in remaining if remaining[k] and k not in rates]
     progress(dict(counts,kind=kind,volume=name,phase=phase,elapsed_seconds=round(elapsed,1),
-                  eta_seconds=round((total-done)/rate) if rate else None))
+                  eta_seconds=round(eta) if not unknown else None,
+                  eta_pending=unknown,remaining_by_kind=remaining))
   report('','','start')
   for kind,p,stat in pending:
+   started_by_kind.setdefault(kind,time.monotonic())
    report(kind,p.name,'reading')
    with zipfile.ZipFile(p) as z:
     if kind=='dlist':
@@ -69,7 +85,15 @@ class Backup:
         by_path[path]=(version,path,f.get('type',f.get('Type','File')),
         f.get('size',f.get('Size',0)),f.get('hash',f.get('Hash')),
         json.dumps(f.get('blocklists',f.get('Blocklists',[]))))
-      self.db.executemany('INSERT INTO files VALUES(?,?,?,?,?,?)',by_path.values())
+      entries=list(by_path.values())
+      for offset in range(0,len(entries),10000):
+       self.db.executemany('INSERT INTO files VALUES(?,?,?,?,?,?)',entries[offset:offset+10000])
+       if progress:
+        elapsed=round(time.monotonic()-started,1)
+        progress(dict(counts,kind=kind,volume=p.name,phase='inserting records',
+                      elapsed_seconds=elapsed,eta_seconds=None,
+                      records_processed=min(offset+10000,len(entries)),
+                      records_total=len(entries)))
       self.db.execute('INSERT OR REPLACE INTO indexed_volumes VALUES(?,?,?)',(p.name,stat.st_size,stat.st_mtime_ns))
     else:
      mappings=[]
@@ -85,6 +109,7 @@ class Backup:
       self.db.execute('INSERT OR REPLACE INTO indexed_volumes VALUES(?,?,?)',(p.name,stat.st_size,stat.st_mtime_ns))
      counts['blocks_added']+=len(mappings)
    done+=1
+   done_by_kind[kind]+=1
    counts['archives_processed']=done
    report(kind,p.name,'complete')
   report('','','finished')
