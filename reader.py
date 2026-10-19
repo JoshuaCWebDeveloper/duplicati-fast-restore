@@ -18,8 +18,10 @@ class Backup:
  def volumes(self,kind): return sorted(p for p in self.folder.glob('duplicati-*') if ('.'+kind+'.zip') in p.name)
  def index(self, lists_only=False, progress=None):
   """Incrementally index snapshot lists and dindex block mappings."""
+  if progress: progress({'phase':'discovering archives','kind':'','volume':'','archives_processed':0,'archives_total':0,'elapsed_seconds':0,'eta_seconds':None})
   lists=self.volumes('dlist')
   indexes=[] if lists_only else self.volumes('dindex')
+  if progress: progress({'phase':'checking existing index','kind':'','volume':'','archives_processed':0,'archives_total':len(lists)+len(indexes),'elapsed_seconds':0,'eta_seconds':None})
   # Use explicit progress on every archive; existing catalog entries are skipped.
   self.db.execute('CREATE TABLE IF NOT EXISTS indexed_volumes(name TEXT PRIMARY KEY, size INTEGER, mtime_ns INTEGER)')
   pending=[]

@@ -35,6 +35,8 @@ def web(db,port):
  HTTPServer(('127.0.0.1',port),Handler).serve_forever()
 def main():
  p=argparse.ArgumentParser();p.add_argument('backup');p.add_argument('command',choices=['index','snapshots','list','restore','web']);p.add_argument('items',nargs='*');p.add_argument('--search',default='');p.add_argument('--catalog');p.add_argument('--db',help='Duplicati per-backup SQLite database');p.add_argument('--port',type=int,default=8765);p.add_argument('--overwrite',action='store_true');a=p.parse_args()
+ if a.command=='index':
+  print(f'Initializing backup index for {a.backup}...',file=sys.stderr,flush=True)
  b=DuplicatiDB(a.backup,a.db) if a.db else Backup(a.backup,a.catalog)
  if not a.db and a.command != 'index' and not b.snapshots():
   raise SystemExit('No indexed snapshots. Specify --db PATH_TO_DUPLICATI_JOB_SQLITE (recommended), or run the index command explicitly.')
