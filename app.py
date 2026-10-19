@@ -1,4 +1,4 @@
-import argparse,json
+import argparse,json,sys
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from urllib.parse import urlparse,parse_qs
 from reader import Backup
@@ -39,7 +39,11 @@ def main():
  if not a.db and a.command != 'index' and not b.snapshots():
   raise SystemExit('No indexed snapshots. Specify --db PATH_TO_DUPLICATI_JOB_SQLITE (recommended), or run the index command explicitly.')
  try:
-  if a.command=='index':result=b.index()
+  if a.command=='index':
+   def progress(x):
+    eta='estimating' if x['eta_seconds'] is None else str(x['eta_seconds'])+'s'
+    print(f"[{x['archives_processed']}/{x['archives_total']}] {x['phase']} {x['kind']} {x['volume']} | elapsed {x['elapsed_seconds']}s | ETA {eta}",file=sys.stderr,flush=True)
+   result=b.index(progress=progress)
   elif a.command=='snapshots':result=b.snapshots()
   elif a.command=='list':result=b.list(int(a.items[0]),a.search)
   elif a.command=='restore':result=b.restore(int(a.items[0]),a.items[2:],a.items[1],a.overwrite)

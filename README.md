@@ -44,3 +44,19 @@ and ordinary files (not symlinks/metadata); test recovered data independently.
 Without `--db`, the reader requires a previously built local catalog and
 returns an explicit error if none exists. Run `index` explicitly to build it,
 which scans dblock ZIP entries and can be slow on large backups.
+
+## Index progress and performance
+
+Run `python3 app.py /backup/folder index` once without `--db` to create
+`.fast-restore.sqlite`. The command reports each `.dlist.zip` and `.dindex.zip`
+archive as it is processed, showing completed/total archives, elapsed time, and
+an estimated time remaining based on throughput so far. A repeat invocation
+skips unchanged archive files (using file size and modification time).
+
+Indexing reads the compressed file lists and indexes, **not** the large
+`.dblock.zip` contents. Initial indexing time depends mainly on snapshot
+count, number of files per snapshot, SQLite insertion speed and the drive.
+The ETA is approximate and may vary considerably between archives. Existing
+indexes from earlier versions can be reused, and new `.dindex.zip` mappings
+are appended. If a Duplicati backup has no `.dindex.zip` files, the indexer
+cannot locate its data blocks; only file listings will be available.
