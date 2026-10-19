@@ -47,15 +47,11 @@ which scans dblock ZIP entries and can be slow on large backups.
 
 ## Index progress and performance
 
-Run `python3 app.py /backup/folder index` once without `--db` to create
-`.fast-restore.sqlite`. The command reports each `.dlist.zip` and `.dindex.zip`
-archive as it is processed, showing completed/total archives, elapsed time, and
-an estimated time remaining based on throughput so far. A repeat invocation
-skips unchanged archive files (using file size and modification time).
+Run `python3 app.py /backup/folder index` without `--db` to create
+`.fast-restore.sqlite`. The command now only discovers snapshot filenames. It avoids upfront content indexing; browse and restore progressively load metadata as needed.
 
-Indexing reads the compressed file lists and indexes, **not** the large
-`.dblock.zip` contents. Initial indexing time depends mainly on snapshot
-count, number of files per snapshot, SQLite insertion speed and the drive.
+Browsing an individual snapshot reads its file list on first access, while
+block index volumes are only read during restores when the mapping is missing.
 The ETA is approximate and may vary considerably between archives. Existing
 indexes from earlier versions can be reused, and new `.dindex.zip` mappings
 are appended. If a Duplicati backup has no `.dindex.zip` files, the indexer
@@ -85,3 +81,28 @@ The initial ETA waits until at least one `.dlist` and `.dindex` is completed,
 so it does not extrapolate a large snapshot's time across thousands of tiny
 index files. Large snapshot inserts report their own record counts every
 10,000 records.
+
+## Lazy, selective backup access (default)
+
+The default CLI and web UI now use `LazyBackup`:
+
+- **snapshots / index**: discovers `.dlist.zip` filenames only; does not open
+  snapshot data, `.dindex.zip`, or `.dblock.zip` archives. The `index`
+  command is now quick snapshot discovery, not a full index.
+- **list / browsing**: loads just the selected snapshot's `filelist.json` from
+  its `.dlist.zip`, then caches that snapshot's file paths in SQLite. It will
+  not eagerly process all historical snapshots.
+- **restore**: looks up content hashes in cached indexes first; if needed it
+  reads small `.dindex.zip` volumes until the required hashes are found,
+  caching the mappings. It opens only the referenced `.dblock.zip` archives
+  and extracts required members. Large archive contents are not fully scanned.
+
+**Limits and tradeoffs:** Without an original Duplicati job DB or existing
+catalog, a complete arbitrary-path search requires reading metadata from the
+relevant snapshot file lists. The ZIP format does not provide a global
+path-to-archive lookup. Similarly, finding an uncached block may require
+searching many dindex volumes; there is no direct hash-to-volume lookup without
+an index. ZIP central directories must be read to locate members, but the
+restorer does not decompress unrelated members. The first search in a 30 MB
+snapshot may still be slow; subsequent searches of that snapshot use SQLite.
+This design minimizes initial I/O, not necessarily first-access latency.

@@ -2,6 +2,7 @@ import argparse,json,sys
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from urllib.parse import urlparse,parse_qs
 from reader import Backup
+from lazy_reader import LazyBackup
 from duplicati_db import DuplicatiDB
 
 PAGE='''<!doctype html><meta charset=utf-8><title>Duplicati Fast Restore</title><style>body{font:15px system-ui;max-width:1000px;margin:35px auto;padding:12px}input,button,select{padding:8px;margin:6px}td{border-bottom:1px solid #ddd;padding:7px}</style><h1>Duplicati Fast Restore</h1><select id=v></select><input id=q placeholder="Search paths"><button onclick=load()>Search</button><table id=t></table><p>Destination: <input id=d size=55 placeholder="/tmp/recovered"><button onclick=restore()>Restore selected</button></p><pre id=status></pre><script>
@@ -37,9 +38,8 @@ def main():
  p=argparse.ArgumentParser();p.add_argument('backup');p.add_argument('command',choices=['index','snapshots','list','restore','web']);p.add_argument('items',nargs='*');p.add_argument('--search',default='');p.add_argument('--catalog');p.add_argument('--db',help='Duplicati per-backup SQLite database');p.add_argument('--port',type=int,default=8765);p.add_argument('--overwrite',action='store_true');a=p.parse_args()
  if a.command=='index':
   print(f'Initializing backup index for {a.backup}...',file=sys.stderr,flush=True)
- b=DuplicatiDB(a.backup,a.db) if a.db else Backup(a.backup,a.catalog)
- if not a.db and a.command != 'index' and not b.snapshots():
-  raise SystemExit('No indexed snapshots. Specify --db PATH_TO_DUPLICATI_JOB_SQLITE (recommended), or run the index command explicitly.')
+ b=DuplicatiDB(a.backup,a.db) if a.db else LazyBackup(a.backup,a.catalog)
+
  try:
   if a.command=='index':
    def progress(x):
