@@ -106,3 +106,13 @@ an index. ZIP central directories must be read to locate members, but the
 restorer does not decompress unrelated members. The first search in a 30 MB
 snapshot may still be slow; subsequent searches of that snapshot use SQLite.
 This design minimizes initial I/O, not necessarily first-access latency.
+
+## Web file manager
+
+The localhost web interface offers folder navigation with breadcrumbs, virtual
+root folders for backed-up absolute paths, snapshot selection, file and folder
+checkboxes, path search, and a restore destination field. Loading indicators
+are displayed while fetching snapshot listings, opening folders, searching, or
+restoring. Opening a previously uncached snapshot can take time as its dlist
+must be read once. Search results and directory contents are capped at 500
+entries per request; narrow a search to see items beyond the limit.

@@ -1,16 +1,14 @@
 import argparse,json,sys
+from pathlib import Path
+from file_manager import browse
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from urllib.parse import urlparse,parse_qs
 from reader import Backup
 from lazy_reader import LazyBackup
 from duplicati_db import DuplicatiDB
 
-PAGE='''<!doctype html><meta charset=utf-8><title>Duplicati Fast Restore</title><style>body{font:15px system-ui;max-width:1000px;margin:35px auto;padding:12px}input,button,select{padding:8px;margin:6px}td{border-bottom:1px solid #ddd;padding:7px}</style><h1>Duplicati Fast Restore</h1><select id=v></select><input id=q placeholder="Search paths"><button onclick=load()>Search</button><table id=t></table><p>Destination: <input id=d size=55 placeholder="/tmp/recovered"><button onclick=restore()>Restore selected</button></p><pre id=status></pre><script>
-async function api(url,opts){let r=await fetch(url,opts),j=await r.json();if(!r.ok)throw Error(j.error);return j}
-async function init(){let x=await api('/snapshots');v.innerHTML=x.map(s=>'<option value="'+s.id+'">'+s.volume+'</option>').join('');await load()}
-async function load(){try{let x=await api('/files?version='+v.value+'&q='+encodeURIComponent(q.value));t.innerHTML='';for(let f of x){let tr=document.createElement('tr'),td=document.createElement('td'),c=document.createElement('input');c.type='checkbox';c.value=f.path;td.append(c);tr.append(td);for(let y of [f.path,f.size]){td=document.createElement('td');td.textContent=y;tr.append(td)}t.append(tr)}}catch(e){status.textContent=e.message}}
-async function restore(){try{let paths=[...document.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);status.textContent=JSON.stringify(await api('/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:+v.value,paths,destination:d.value})}),null,2)}catch(e){status.textContent=e.message}}
-init()</script>'''
+PAGE = (Path(__file__).with_name('web_ui.html')).read_text(encoding='utf-8')
+
 def web(db,port):
  class Handler(BaseHTTPRequestHandler):
   def send(self,obj,code=200,html=False):
@@ -22,6 +20,7 @@ def web(db,port):
     if u.path=='/':return self.send(PAGE,html=True)
     if u.path=='/snapshots':return self.send(db.snapshots())
     if u.path=='/files':return self.send(db.list(int(q['version'][0]),q.get('q',[''])[0]))
+    if u.path=='/browse':return self.send(browse(db,int(q['version'][0]),q.get('directory',[''])[0],q.get('search',[''])[0]))
     return self.send({'error':'Not found'},404)
    except Exception as e:self.send({'error':str(e)},400)
   def do_POST(self):
